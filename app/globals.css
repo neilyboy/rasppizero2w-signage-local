@@ -1,26 +1,73 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --border: #334155;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #3b82f6;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --radius: 0.5rem;
+  --sidebar-width: 240px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
+html, body {
+  margin: 0;
+  padding: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* RBC calendar overrides */
+.rbc-calendar { background: transparent; color: #f1f5f9; }
+.rbc-header { background: #1e293b; border-color: #334155; color: #94a3b8; padding: 8px 4px; font-size: 12px; font-weight: 500; }
+.rbc-month-view, .rbc-time-view, .rbc-agenda-view { border-color: #334155; }
+.rbc-day-bg { border-color: #334155 !important; }
+.rbc-off-range-bg { background: #0f172a; }
+.rbc-today { background: rgba(59,130,246,0.08); }
+.rbc-event { border-radius: 4px; padding: 2px 4px; font-size: 11px; }
+.rbc-show-more { color: #3b82f6; font-size: 11px; }
+.rbc-toolbar button { color: #94a3b8; background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+.rbc-toolbar button:hover { background: #334155; color: #f1f5f9; }
+.rbc-toolbar button.rbc-active { background: #3b82f6; color: white; border-color: #3b82f6; }
+.rbc-toolbar-label { color: #f1f5f9; font-weight: 600; }
+.rbc-time-slot { border-color: #334155; }
+.rbc-time-content, .rbc-time-header { border-color: #334155; }
+.rbc-allday-cell { border-color: #334155; }
+.rbc-date-cell { color: #94a3b8; padding: 4px 8px; font-size: 12px; }
+.rbc-date-cell.rbc-now { color: #3b82f6; font-weight: 600; }
+.rbc-row-segment { padding: 0 2px 2px; }
+.rbc-current-time-indicator { background: #3b82f6; }
+.rbc-label { color: #94a3b8; font-size: 11px; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes ticker { from { transform: translateX(100vw); } to { transform: translateX(-100%); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.animate-fadeIn { animation: fadeIn 0.3s ease; }
+.animate-slideUp { animation: slideUp 0.3s ease; }
+.animate-ticker { animation: ticker linear infinite; }
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+.animate-spin { animation: spin 1s linear infinite; }
+

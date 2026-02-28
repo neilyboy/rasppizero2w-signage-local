@@ -1,36 +1,396 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📺 PiSign — Raspberry Pi Zero 2W Digital Signage
 
-## Getting Started
+<div align="center">
 
-First, run the development server:
+![PiSign](https://img.shields.io/badge/PiSign-Digital_Signage-3b82f6?style=for-the-badge&logo=raspberry-pi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js_14-App_Router-black?style=for-the-badge&logo=next.js)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS_v3-Styling-06b6d4?style=for-the-badge&logo=tailwindcss)
+![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+
+**A full-featured, locally-hosted digital signage control system for the Raspberry Pi Zero 2W.**  
+Plug your Pi into a TV, connect to your WiFi, and control everything from any phone or laptop on the network — no cloud required.
+
+[🚀 Quick Deploy](#-quick-deploy-from-scratch) · [✨ Features](#-features) · [📖 Full Setup Guide](#-full-pi-zero-2w-setup-guide) · [🛠 Development](#-local-development)
+
+</div>
+
+---
+
+## ✨ Features
+
+### 🖥️ Admin Panel (`/admin`)
+
+| Page | What it does |
+|---|---|
+| **Dashboard** | Live Pi hardware stats (CPU temp, RAM, disk, uptime), content summary, real-time clock, quick-action shortcuts |
+| **Media Library** | Drag-and-drop upload for images & videos, add web URLs, text/announcement slides, stat widgets — all with tag filtering and inline preview |
+| **Playlists** | Build ordered playlists, drag-to-reorder items, per-item duration override, loop & shuffle toggles, thumbnail strip preview |
+| **Schedule** | Full calendar (month/week/day/agenda), click-to-create events, one-time & recurring (daily, weekdays, weekends, custom days), 8 color options |
+| **Stats & Charts** | Bar, line, area, pie, gauge, countdown timer, number KPI, data table — CSV data entry with **live preview**, 7 color schemes |
+| **Announcements** | Scrolling ticker overlay with full color/font/size/priority controls, scheduled start & end times, live preview |
+| **Display Control** | Mode switcher (playlist / asset / idle), brightness slider, transition effects (fade, slide, zoom), clock overlay toggle, ticker speed |
+| **Analytics** | Events over time (line chart), event breakdown (bar chart), top assets by play count, summary table — 1/7/14/30 day range |
+| **Settings** | Full Pi Zero 2W setup guide with copy-paste commands, PM2 auto-start, Chromium kiosk mode, danger zone (bulk delete) |
+
+### 📺 Display View (`/display`)
+
+- **Full-screen TV output** — renders images, videos (autoplay), web iframes, text slides, all stat/chart widget types
+- **Clock overlay** — always-on top-right clock with date
+- **Scrolling announcement ticker** — bottom bar with custom color, font, speed, and priority ordering
+- **Schedule-aware** — auto-switches active playlist/asset at the correct time without any manual intervention
+- **Idle screen** — beautiful full-screen clock when no content is assigned
+- **Analytics recording** — silently tracks asset plays and display views
+
+### 📊 Stats & Charts Widget Types
+- 📈 **Line Chart** — trends over time
+- 📊 **Bar Chart** — comparisons, with per-bar color
+- 🔵 **Area Chart** — cumulative data
+- 🥧 **Pie Chart** — proportions with legend
+- 🔢 **Single Number / KPI** — large-format metric display
+- ⏱️ **Countdown Timer** — days/hours/mins/secs to a target date
+- 🎯 **Gauge** — arc-style progress meter with configurable max
+- 📋 **Data Table** — label/value rows
+
+### 🗓️ Schedule Features
+- Month, Week, Day, and Agenda calendar views
+- Click empty slots to create events instantly
+- Color-coded events per entry
+- Recurrence: **None, Daily, Weekdays, Weekends, Weekly, Custom days**
+- Assign a **playlist** or a **single asset** to any time slot
+- Active/Inactive toggle per entry
+
+---
+
+## 🚀 Quick Deploy From Scratch
+
+> **Flash a fresh Raspberry Pi Zero 2W → have PiSign running on your TV in ~15 minutes.**
+
+### What you need
+- Raspberry Pi Zero 2W
+- MicroSD card (8GB+)
+- HDMI cable + TV/monitor
+- USB power supply (5V 2.5A)
+- WiFi network
+
+---
+
+### Step 1 — Flash the OS
+
+1. Download **[Raspberry Pi Imager](https://www.raspberrypi.com/software/)**
+2. Choose **Raspberry Pi OS Lite (64-bit)** *(no desktop — we run headless + kiosk)*  
+   Or **Raspberry Pi OS (64-bit)** with desktop if you want easier setup
+3. Before writing, click ⚙️ **Advanced Options** and:
+   - Set hostname: `pisign`
+   - Enable SSH
+   - Set your WiFi SSID + password
+   - Set username/password (e.g. `pi` / `yourpassword`)
+4. Write to SD card, insert into Pi, power on
+
+---
+
+### Step 2 — Connect & Update
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# SSH into the Pi (give it ~60s to boot first)
+ssh pi@pisign.local
+# or use its IP: ssh pi@192.168.x.x
+
+# Update everything
+sudo apt update && sudo apt upgrade -y
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Step 3 — Install Node.js 20
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs git
 
-## Learn More
+# Verify
+node --version   # should be v20.x.x
+npm --version
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Step 4 — Clone & Build PiSign
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+git clone https://github.com/neilyboy/rasppizero2w-signage-local.git
+cd rasppizero2w-signage-local
 
-## Deploy on Vercel
+npm install
+npm run build
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+> ⏳ The first `npm run build` takes 3–5 minutes on a Pi Zero 2W — it only happens once.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+### Step 5 — Auto-Start with PM2
+
+```bash
+# Install PM2 process manager
+sudo npm install -g pm2
+
+# Start PiSign
+pm2 start npm --name pisign -- start -- -p 3000
+
+# Save and enable auto-start on boot
+pm2 startup
+# (run the command it outputs with sudo)
+pm2 save
+```
+
+PiSign will now **automatically restart** if it crashes and **start on every boot**.
+
+---
+
+### Step 6 — Set Up the TV Display (Kiosk Mode)
+
+This launches Chromium full-screen on the HDMI output pointing at `/display`.
+
+#### Option A — Desktop (Raspberry Pi OS with desktop)
+
+```bash
+# Install Chromium and cursor hider
+sudo apt install -y chromium-browser unclutter
+
+# Create autostart entry
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/pisign-kiosk.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=PiSign Kiosk
+Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble http://localhost:3000/display
+X-GNOME-Autostart-enabled=true
+EOF
+
+# Hide the mouse cursor
+echo "unclutter -idle 0 -root &" >> ~/.config/autostart/unclutter.sh
+chmod +x ~/.config/autostart/unclutter.sh
+```
+
+#### Option B — Headless (Raspberry Pi OS Lite with X11)
+
+```bash
+sudo apt install -y xorg chromium-browser unclutter openbox
+
+# Create xinitrc
+cat > ~/.xinitrc << 'EOF'
+xset s off
+xset s noblank
+xset -dpms
+unclutter -idle 0 -root &
+exec chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
+EOF
+
+# Auto-start X on login
+echo "[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && startx" >> ~/.bash_profile
+
+# Auto-login
+sudo raspi-config nonint do_boot_behaviour B2
+```
+
+---
+
+### Step 7 — Disable Screen Blanking
+
+```bash
+sudo nano /etc/lightdm/lightdm.conf
+# Add/change under [Seat:*]:
+# xserver-command=X -s 0 -dpms
+```
+
+Or for headless X11, add to `~/.xinitrc` (already included in Option B above):
+```bash
+xset s off
+xset s noblank
+xset -dpms
+```
+
+---
+
+### Step 8 — Find Your Pi's IP & Open Admin
+
+```bash
+hostname -I | awk '{print $1}'
+```
+
+Then from **any device on the same WiFi**, open:
+
+| URL | Purpose |
+|---|---|
+| `http://pisign.local:3000` | → redirects to admin |
+| `http://pisign.local:3000/admin` | 🎛️ Admin control panel |
+| `http://pisign.local:3000/display` | 📺 TV display output |
+| `http://[pi-ip]:3000/admin` | (use IP if .local doesn't resolve) |
+
+---
+
+### Step 9 — Set a Static IP (Recommended)
+
+```bash
+sudo nano /etc/dhcpcd.conf
+```
+Add at the bottom:
+```
+interface wlan0
+static ip_address=192.168.1.100/24
+static routers=192.168.1.1
+static domain_name_servers=8.8.8.8
+```
+```bash
+sudo reboot
+```
+
+---
+
+## 📁 Project Structure
+
+```
+rasppizero2w-signage-local/
+├── app/
+│   ├── admin/
+│   │   ├── analytics/page.tsx     # Usage analytics
+│   │   ├── announcements/page.tsx # Ticker management
+│   │   ├── display/page.tsx       # Display control
+│   │   ├── media/page.tsx         # Media library
+│   │   ├── playlists/page.tsx     # Playlist builder
+│   │   ├── schedule/page.tsx      # Calendar scheduler
+│   │   ├── settings/page.tsx      # Setup & config
+│   │   ├── stats/page.tsx         # Stats/charts builder
+│   │   ├── layout.tsx             # Admin sidebar layout
+│   │   └── page.tsx               # Dashboard
+│   ├── api/
+│   │   ├── assets/[id]/route.ts
+│   │   ├── assets/route.ts
+│   │   ├── playlists/[id]/route.ts
+│   │   ├── playlists/route.ts
+│   │   ├── schedule/[id]/route.ts
+│   │   ├── schedule/route.ts
+│   │   ├── stats/[id]/route.ts
+│   │   ├── stats/route.ts
+│   │   ├── announcements/[id]/route.ts
+│   │   ├── announcements/route.ts
+│   │   ├── display/route.ts
+│   │   ├── analytics/route.ts
+│   │   ├── system/route.ts        # Pi hardware stats
+│   │   └── upload/route.ts        # File upload handler
+│   ├── display/page.tsx           # Full-screen TV output
+│   ├── layout.tsx
+│   ├── page.tsx                   # → redirects to /admin
+│   └── globals.css
+├── components/
+│   └── Sidebar.tsx
+├── lib/
+│   ├── db.ts                      # SQLite schema & connection
+│   ├── types.ts                   # TypeScript types
+│   └── utils.ts
+├── data/                          # gitignored — SQLite DB lives here
+├── public/
+│   └── uploads/                   # gitignored — uploaded media
+├── next.config.mjs
+├── tailwind.config.js
+└── postcss.config.js
+```
+
+---
+
+## 🛠 Local Development
+
+```bash
+git clone https://github.com/neilyboy/rasppizero2w-signage-local.git
+cd rasppizero2w-signage-local
+npm install
+npm run dev
+```
+
+- Admin: [http://localhost:3000/admin](http://localhost:3000/admin)
+- Display: [http://localhost:3000/display](http://localhost:3000/display)
+
+---
+
+## 🔧 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript |
+| Styling | TailwindCSS v3 |
+| Database | SQLite via `better-sqlite3` |
+| Charts | Recharts |
+| Calendar | react-big-calendar + date-fns |
+| File Upload | Native Next.js FormData API |
+| Icons | Lucide React |
+| Drag & Drop | react-dropzone (media upload), HTML5 drag API (playlist reorder) |
+| Process Manager | PM2 (production) |
+
+---
+
+## 💾 Data Storage
+
+| Item | Location | Gitignored |
+|---|---|---|
+| SQLite database | `data/signage.db` | ✅ Yes |
+| Uploaded media | `public/uploads/` | ✅ Yes |
+
+Both are **auto-created on first run** — no setup needed.
+
+---
+
+## 🔄 Updating PiSign
+
+```bash
+cd rasppizero2w-signage-local
+git pull
+npm install
+npm run build
+pm2 restart pisign
+```
+
+---
+
+## 🩺 Troubleshooting
+
+**App won't start after reboot**
+```bash
+pm2 status
+pm2 logs pisign
+```
+
+**Display page is blank**
+- Check Display Control in admin — set mode to `playlist` and select a playlist
+- Make sure at least one asset exists in the playlist
+
+**Can't reach admin from phone**
+```bash
+# Check Pi's IP
+hostname -I
+# Make sure both devices are on the same WiFi network
+# Try http://[ip]:3000/admin directly
+```
+
+**Database locked / errors**
+```bash
+pm2 restart pisign
+```
+
+**High CPU temp**
+- Normal idle temp on Pi Zero 2W is 45–60°C
+- Add a heatsink if running above 75°C
+- The dashboard shows live CPU temp with color-coded warnings
+
+---
+
+## 📄 License
+
+MIT — free to use, modify, and distribute.
+
+---
+
+<div align="center">
+Built for the <strong>Raspberry Pi Zero 2W</strong> — runs great on $15 hardware 🍓
+</div>

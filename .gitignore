@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PiSign data (SQLite DB and uploaded media)
+/data/
+/public/uploads/
