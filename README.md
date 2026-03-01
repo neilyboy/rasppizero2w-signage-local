@@ -120,12 +120,13 @@ npm --version
 The Pi Zero 2W only has 512MB RAM. The Next.js build will be **killed** without extra swap.
 
 ```bash
-sudo dphys-swapfile swapoff
-sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
-sudo dphys-swapfile setup
-sudo dphys-swapfile swapon
+sudo swapoff -a
+sudo fallocate -l 1536M /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
 
-# Verify — should show ~1GB swap
+# Verify — should show ~1.5GB swap
 free -h
 ```
 
@@ -373,11 +374,12 @@ pm2 restart pisign
 
 **Build was `Killed` (out of memory)**
 ```bash
-# Pi Zero 2W needs swap to build — run Step 4 first
-sudo dphys-swapfile swapoff
-sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
-sudo dphys-swapfile setup && sudo dphys-swapfile swapon
-# Then retry:
+# Add swap first, then retry the build
+sudo swapoff -a
+sudo fallocate -l 1536M /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
 cd ~/rasppizero2w-signage-local && npm run build
 ```
 
