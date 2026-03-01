@@ -187,8 +187,8 @@ unclutter -idle 0 -root &
 exec chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
 EOF
 
-# Auto-start X on login
-echo "[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && startx" >> ~/.bash_profile
+# Auto-start X on login (single quotes prevent variable expansion)
+echo '[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && startx' >> ~/.bash_profile
 
 # Auto-login
 sudo raspi-config nonint do_boot_behaviour B2
