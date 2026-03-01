@@ -115,7 +115,23 @@ npm --version
 
 ---
 
-### Step 4 — Clone & Build PiSign
+### Step 4 — Increase Swap (Required for Pi Zero 2W)
+
+The Pi Zero 2W only has 512MB RAM. The Next.js build will be **killed** without extra swap.
+
+```bash
+sudo dphys-swapfile swapoff
+sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+sudo dphys-swapfile setup
+sudo dphys-swapfile swapon
+
+# Verify — should show ~1GB swap
+free -h
+```
+
+---
+
+### Step 5 — Clone & Build PiSign
 
 ```bash
 git clone https://github.com/neilyboy/rasppizero2w-signage-local.git
@@ -125,11 +141,11 @@ npm install
 npm run build
 ```
 
-> ⏳ The first `npm run build` takes 3–5 minutes on a Pi Zero 2W — it only happens once.
+> ⏳ The first `npm run build` takes **8–12 minutes** on a Pi Zero 2W with swap — it only happens once.
 
 ---
 
-### Step 5 — Auto-Start with PM2
+### Step 6 — Auto-Start with PM2
 
 ```bash
 # Install PM2 process manager
@@ -148,7 +164,7 @@ PiSign will now **automatically restart** if it crashes and **start on every boo
 
 ---
 
-### Step 6 — Set Up the TV Display (Kiosk Mode)
+### Step 7 — Set Up the TV Display (Kiosk Mode)
 
 This launches Chromium full-screen on the HDMI output pointing at `/display`.
 
@@ -196,7 +212,7 @@ sudo raspi-config nonint do_boot_behaviour B2
 
 ---
 
-### Step 7 — Disable Screen Blanking
+### Step 8 — Disable Screen Blanking
 
 ```bash
 sudo nano /etc/lightdm/lightdm.conf
@@ -213,7 +229,7 @@ xset -dpms
 
 ---
 
-### Step 8 — Find Your Pi's IP & Open Admin
+### Step 9 — Find Your Pi's IP & Open Admin
 
 ```bash
 hostname -I | awk '{print $1}'
@@ -230,7 +246,7 @@ Then from **any device on the same WiFi**, open:
 
 ---
 
-### Step 9 — Set a Static IP (Recommended)
+### Step 10 — Set a Static IP (Recommended)
 
 ```bash
 sudo nano /etc/dhcpcd.conf
@@ -354,6 +370,16 @@ pm2 restart pisign
 ---
 
 ## 🩺 Troubleshooting
+
+**Build was `Killed` (out of memory)**
+```bash
+# Pi Zero 2W needs swap to build — run Step 4 first
+sudo dphys-swapfile swapoff
+sudo sed -i 's/CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+sudo dphys-swapfile setup && sudo dphys-swapfile swapon
+# Then retry:
+cd ~/rasppizero2w-signage-local && npm run build
+```
 
 **"Could not find a production build" error**
 ```bash
