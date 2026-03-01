@@ -249,6 +249,26 @@ function WebpageDisplay({ url, style, onEnded }: { url: string; style: React.CSS
     browserOpenRef.current = false;
     if (pollRef.current) clearInterval(pollRef.current);
 
+    let cancelled = false;
+
+    function startScreenshotPoll() {
+      if (cancelled) return;
+      const poll = async () => {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`/api/screenshot?url=${encodeURIComponent(url)}`);
+          const data = await res.json();
+          if (!cancelled && data.status === 'ready' && data.url) {
+            setScreenshotUrl(data.url + '?t=' + Date.now());
+            setMode('screenshot');
+            if (pollRef.current) clearInterval(pollRef.current);
+          }
+        } catch { /* keep polling */ }
+      };
+      poll();
+      pollRef.current = setInterval(poll, 3000);
+    }
+
     // Try to open a real Chromium kiosk window
     fetch('/api/browser', {
       method: 'POST',
@@ -257,19 +277,21 @@ function WebpageDisplay({ url, style, onEnded }: { url: string; style: React.CSS
     })
       .then(r => r.json())
       .then(data => {
-        if (data.success) {
+        if (cancelled) return;
+        if (data.success === true) {
           browserOpenRef.current = true;
           setMode('browser');
         } else {
-          // Not on Pi or chromium not found — fall back to screenshot
+          // chromium not found, exited immediately, or not on Pi — use screenshot
           startScreenshotPoll();
         }
       })
-      .catch(() => startScreenshotPoll());
+      .catch(() => { if (!cancelled) startScreenshotPoll(); });
 
     return () => {
+      cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
-      // Close browser window when asset unmounts (next asset takes over)
+      // Close browser window when asset unmounts
       if (browserOpenRef.current) {
         fetch('/api/browser', {
           method: 'POST',
@@ -279,24 +301,7 @@ function WebpageDisplay({ url, style, onEnded }: { url: string; style: React.CSS
         browserOpenRef.current = false;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
-
-  function startScreenshotPoll() {
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/screenshot?url=${encodeURIComponent(url)}`);
-        const data = await res.json();
-        if (data.status === 'ready' && data.url) {
-          setScreenshotUrl(data.url + '?t=' + Date.now());
-          setMode('screenshot');
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch { /* keep polling */ }
-    };
-    poll();
-    pollRef.current = setInterval(poll, 3000);
-  }
 
   // In browser mode — the Chromium window covers the screen at the OS level.
   // Render a transparent black placeholder so the Next.js overlay (clock/ticker) still works.

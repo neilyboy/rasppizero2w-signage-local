@@ -79,15 +79,18 @@ export async function POST(req: NextRequest) {
     ];
 
     const child = execFile(chromium, args, {
-      env: { ...process.env, DISPLAY: ':0' },
+      env: { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' },
     });
 
-    child.unref();
     activeBrowser = child;
     activePid = child.pid ?? null;
     activeUrl = url;
 
-    child.on('exit', () => {
+    let exited = false;
+    let exitCode: number | null = null;
+    child.on('exit', (code) => {
+      exited = true;
+      exitCode = code;
       if (activePid === child.pid) {
         activeBrowser = null;
         activePid = null;
@@ -95,6 +98,15 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    // Wait 1.5s to see if Chromium immediately crashes (e.g. DISPLAY not set)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    if (exited) {
+      console.error(`[browser] chromium exited immediately (code=${exitCode}) for ${url} — falling back to screenshot`);
+      return NextResponse.json({ success: false, fallback: true, reason: `chromium exited with code ${exitCode}` });
+    }
+
+    child.unref();
     console.log(`[browser] opened pid=${activePid} url=${url}`);
     return NextResponse.json({ success: true, action: 'opened', pid: activePid });
   }
