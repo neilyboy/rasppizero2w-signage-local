@@ -289,6 +289,23 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   })();
 }
 
+export async function POST(req: NextRequest) {
+  // Debug endpoint: POST /api/screenshot returns env info
+  return NextResponse.json({
+    DISPLAY: process.env.DISPLAY,
+    XAUTHORITY: process.env.XAUTHORITY,
+    HOME: process.env.HOME,
+    xauthFile: findXauthority(),
+    cdpPort: CDP_PORT,
+    cdpAvailable: await httpGet(`http://localhost:${CDP_PORT}/json/version`, 1000).then(() => true).catch(() => false),
+    scrot: findBin('/usr/bin/scrot'),
+    xdotool: findBin('/usr/bin/xdotool'),
+    chromium: findChromium(),
+    fb0: fs.existsSync('/dev/fb0'),
+    fb0readable: (() => { try { fs.accessSync('/dev/fb0', fs.constants.R_OK); return true; } catch { return false; } })(),
+  });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
