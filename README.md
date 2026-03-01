@@ -152,8 +152,8 @@ npm run build
 # Install PM2 process manager
 sudo npm install -g pm2
 
-# Start PiSign
-pm2 start npm --name pisign -- start -- -p 3000
+# Start PiSign using the ecosystem file (sets DISPLAY=:0 for browser control)
+pm2 start ecosystem.config.js
 
 # Save and enable auto-start on boot
 pm2 startup
