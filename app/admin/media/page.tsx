@@ -47,10 +47,11 @@ interface FormData {
   content: string;
   duration: number;
   tags: string;
+  fit: string;
 }
 
 const defaultForm: FormData = {
-  name: '', type: 'image', url: '', content: '', duration: 10, tags: ''
+  name: '', type: 'image', url: '', content: '', duration: 10, tags: '', fit: 'contain'
 };
 
 export default function MediaPage() {
@@ -112,7 +113,8 @@ export default function MediaPage() {
     setForm({
       name: a.name, type: a.type, url: a.url ?? '',
       content: a.content ?? '', duration: a.duration,
-      tags: a.tags.join(', ')
+      tags: a.tags.join(', '),
+      fit: (a.metadata as Record<string, string>)?.fit ?? 'contain',
     });
     setUploadedUrl(a.url ?? '');
     setShowModal(true);
@@ -146,6 +148,7 @@ export default function MediaPage() {
       content: form.content || undefined,
       duration: form.duration,
       tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      metadata: form.type === 'image' ? { fit: form.fit } : {},
     };
     if (editingAsset) {
       await fetch(`/api/assets/${editingAsset.id}`, {
@@ -372,6 +375,28 @@ export default function MediaPage() {
                   <input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
                     placeholder={form.type === 'webpage' ? 'https://example.com' : 'https://...'}
                     style={{ width: '100%', padding: '9px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#f1f5f9', fontSize: 13, outline: 'none' }} />
+                  {form.type === 'webpage' && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>
+                      ⚠️ Sites like Google, YouTube, Facebook block iframe embedding.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {form.type === 'image' && (
+                <div>
+                  <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>Image Fit</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[{ v: 'contain', l: 'Contain', d: 'Fit whole image, keep ratio' }, { v: 'cover', l: 'Cover', d: 'Fill screen, may crop' }, { v: 'fill', l: 'Stretch', d: 'Fill screen, may distort' }].map(opt => (
+                      <button key={opt.v} type="button" onClick={() => setForm(f => ({ ...f, fit: opt.v }))}
+                        title={opt.d}
+                        style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid', fontSize: 12, cursor: 'pointer',
+                          borderColor: form.fit === opt.v ? '#3b82f6' : '#334155',
+                          background: form.fit === opt.v ? 'rgba(59,130,246,0.15)' : 'transparent',
+                          color: form.fit === opt.v ? '#3b82f6' : '#64748b',
+                        }}>{opt.l}</button>
+                    ))}
+                  </div>
                 </div>
               )}
 

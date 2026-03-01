@@ -235,6 +235,47 @@ function StatsDisplay({ widget }: { widget: StatsWidget }) {
   );
 }
 
+/* ─── Webpage display with CSP fallback ─── */
+function WebpageDisplay({ url, style }: { url: string; style: React.CSSProperties }) {
+  const [blocked, setBlocked] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    setBlocked(false);
+    const timer = setTimeout(() => {
+      try {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc || doc.body === null || doc.body.innerHTML === '') setBlocked(true);
+      } catch {
+        setBlocked(true);
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [url]);
+
+  if (blocked) {
+    return (
+      <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 16 }}>
+        <div style={{ fontSize: 48, marginBottom: 8 }}>🌐</div>
+        <div style={{ fontSize: 'clamp(16px, 3vw, 36px)', fontWeight: 700, color: 'white', textAlign: 'center' }}>{url}</div>
+        <div style={{ fontSize: 'clamp(12px, 1.5vw, 18px)', color: 'rgba(255,255,255,0.4)', textAlign: 'center', maxWidth: 600 }}>
+          This site blocks embedding in iframes.<br />Use a screenshot image asset instead.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={url}
+      style={{ ...style, border: 'none' }}
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      onError={() => setBlocked(true)}
+    />
+  );
+}
+
 /* ─── Asset renderer ─── */
 function AssetDisplay({ asset, transition, onEnded }: {
   asset: Asset;
@@ -262,8 +303,15 @@ function AssetDisplay({ asset, transition, onEnded }: {
   };
 
   if (asset.type === 'image') {
+    const fit = (asset.metadata as Record<string, string>)?.fit ?? 'contain';
     return (
-      <div style={{ ...style, backgroundImage: `url(${asset.url})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+      <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+        <img
+          src={asset.url}
+          alt={asset.name}
+          style={{ maxWidth: '100%', maxHeight: '100%', width: fit === 'fill' ? '100%' : undefined, height: fit === 'fill' ? '100%' : undefined, objectFit: fit as React.CSSProperties['objectFit'] }}
+        />
+      </div>
     );
   }
 
@@ -282,13 +330,7 @@ function AssetDisplay({ asset, transition, onEnded }: {
   }
 
   if (asset.type === 'webpage') {
-    return (
-      <iframe
-        src={asset.url}
-        style={{ ...style, border: 'none' }}
-        sandbox="allow-scripts allow-same-origin allow-forms"
-      />
-    );
+    return <WebpageDisplay url={asset.url ?? ''} style={style} />;
   }
 
   if (asset.type === 'text' || asset.type === 'announcement') {
