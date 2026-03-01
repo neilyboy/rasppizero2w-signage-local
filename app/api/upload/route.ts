@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   else if (mimeType.startsWith('image/')) assetType = 'image';
 
   return NextResponse.json({
-    url: `/uploads/${filename}`,
+    url: `/api/uploads/${filename}`,
     originalName: file.name,
     mimeType,
     size: file.size,

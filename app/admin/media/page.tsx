@@ -135,10 +135,14 @@ export default function MediaPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    let resolvedUrl = form.url || uploadedUrl || undefined;
+    if (resolvedUrl && form.type === 'webpage' && !resolvedUrl.startsWith('http')) {
+      resolvedUrl = `https://${resolvedUrl}`;
+    }
     const payload = {
       name: form.name,
       type: form.type,
-      url: form.url || uploadedUrl || undefined,
+      url: resolvedUrl,
       content: form.content || undefined,
       duration: form.duration,
       tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
@@ -296,7 +300,12 @@ export default function MediaPage() {
                       <Edit2 size={12} /> Edit
                     </button>
                     {asset.url && (
-                      <a href={asset.url} target="_blank" rel="noreferrer" style={{ padding: '6px 8px', borderRadius: 6, background: '#0f172a', border: '1px solid #334155', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                      <a
+                        href={asset.type === 'webpage'
+                          ? (asset.url.startsWith('http') ? asset.url : `https://${asset.url}`)
+                          : asset.url}
+                        target="_blank" rel="noreferrer"
+                        style={{ padding: '6px 8px', borderRadius: 6, background: '#0f172a', border: '1px solid #334155', color: '#64748b', display: 'flex', alignItems: 'center' }}>
                         <ExternalLink size={12} />
                       </a>
                     )}
