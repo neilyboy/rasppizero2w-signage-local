@@ -156,7 +156,7 @@ This launches Chromium full-screen on the HDMI output pointing at `/display`.
 
 ```bash
 # Install Chromium and cursor hider
-sudo apt install -y chromium-browser unclutter
+sudo apt install -y chromium unclutter
 
 # Create autostart entry
 mkdir -p ~/.config/autostart
@@ -164,7 +164,7 @@ cat > ~/.config/autostart/pisign-kiosk.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=PiSign Kiosk
-Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble http://localhost:3000/display
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble http://localhost:3000/display
 X-GNOME-Autostart-enabled=true
 EOF
 
@@ -176,7 +176,7 @@ chmod +x ~/.config/autostart/unclutter.sh
 #### Option B — Headless (Raspberry Pi OS Lite with X11)
 
 ```bash
-sudo apt install -y xorg chromium-browser unclutter openbox
+sudo apt install -y xorg chromium unclutter openbox
 
 # Create xinitrc
 cat > ~/.xinitrc << 'EOF'
@@ -184,7 +184,7 @@ xset s off
 xset s noblank
 xset -dpms
 unclutter -idle 0 -root &
-exec chromium-browser --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
+exec chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
 EOF
 
 # Auto-start X on login
