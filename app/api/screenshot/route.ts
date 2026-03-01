@@ -43,6 +43,12 @@ function captureInBackground(url: string, filename: string, filepath: string) {
     '--disable-software-rasterizer',
     '--run-all-compositor-stages-before-draw',
     '--virtual-time-budget=5000',
+    '--ignore-certificate-errors',
+    '--ignore-ssl-errors',
+    '--ignore-certificate-errors-spki-list',
+    '--allow-insecure-localhost',
+    '--disable-web-security',
+    '--user-agent=Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     '--window-size=1920,1080',
     `--screenshot=${filepath}`,
     url,
@@ -51,7 +57,8 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const child = execFile(chromium, args, { timeout: 45000 }, (err) => {
     if (err || !fs.existsSync(filepath)) {
       console.error('[screenshot] capture failed for', url, err?.message ?? 'no file');
-      screenshotCache.set(url, { status: 'error' });
+      // Delete from cache so next request retries rather than staying stuck
+      screenshotCache.delete(url);
     } else {
       const imageUrl = `/api/uploads/${filename}`;
       screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });

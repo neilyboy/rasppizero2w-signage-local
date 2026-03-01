@@ -253,13 +253,10 @@ function WebpageDisplay({ url, style }: { url: string; style: React.CSSPropertie
         if (data.status === 'ready' && data.url) {
           setScreenshotUrl(data.url + '?t=' + Date.now());
           if (pollRef.current) clearInterval(pollRef.current);
-        } else if (data.status === 'error') {
-          setFailed(true);
-          if (pollRef.current) clearInterval(pollRef.current);
         }
+        // pending or error: keep polling, server will retry automatically
       } catch {
-        setFailed(true);
-        if (pollRef.current) clearInterval(pollRef.current);
+        // network error: keep polling
       }
     };
 
