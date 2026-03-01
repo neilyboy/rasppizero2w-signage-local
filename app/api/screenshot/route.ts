@@ -25,6 +25,48 @@ function findChromium(): string {
   return 'chromium';
 }
 
+function findWkhtmltoimage(): string | null {
+  const candidates = ['/usr/bin/wkhtmltoimage', '/usr/local/bin/wkhtmltoimage'];
+  for (const c of candidates) { if (fs.existsSync(c)) return c; }
+  return null;
+}
+
+function findCutycapt(): string | null {
+  const candidates = ['/usr/bin/cutycapt', '/usr/local/bin/cutycapt'];
+  for (const c of candidates) { if (fs.existsSync(c)) return c; }
+  return null;
+}
+
+function tryWkhtmltoimage(bin: string, url: string, filepath: string, childEnv: NodeJS.ProcessEnv): Promise<boolean> {
+  return new Promise((resolve) => {
+    const args = ['--width', '1920', '--height', '1080', '--javascript-delay', '2000', url, filepath];
+    const stderrLines: string[] = [];
+    const child = spawn(bin, args, { env: childEnv, timeout: 60000 });
+    child.stderr.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) stderrLines.push(l); });
+    child.on('close', (code) => {
+      const ok = fs.existsSync(filepath);
+      if (!ok) console.error(`[screenshot] wkhtmltoimage failed (code=${code}): ${stderrLines.slice(-2).join(' | ')}`);
+      resolve(ok);
+    });
+    child.on('error', (err) => { console.error('[screenshot] wkhtmltoimage error:', err.message); resolve(false); });
+  });
+}
+
+function tryCutycapt(bin: string, url: string, filepath: string, childEnv: NodeJS.ProcessEnv): Promise<boolean> {
+  return new Promise((resolve) => {
+    const args = [`--url=${url}`, `--out=${filepath}`, '--min-width=1920', '--delay=3000'];
+    const stderrLines: string[] = [];
+    const child = spawn(bin, args, { env: { ...childEnv, DISPLAY: ':0' }, timeout: 60000 });
+    child.stderr.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) stderrLines.push(l); });
+    child.on('close', (code) => {
+      const ok = fs.existsSync(filepath);
+      if (!ok) console.error(`[screenshot] cutycapt failed (code=${code}): ${stderrLines.slice(-2).join(' | ')}`);
+      resolve(ok);
+    });
+    child.on('error', (err) => { console.error('[screenshot] cutycapt error:', err.message); resolve(false); });
+  });
+}
+
 function urlToFilename(url: string): string {
   const hash = crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
   return `_screenshot_${hash}.png`;
@@ -91,19 +133,48 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
 
   (async () => {
+    // Try Chromium headless strategies first
     for (const strategy of HEADLESS_STRATEGIES) {
-      // Remove old file so we can check if this strategy created it
       if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-      console.log(`[screenshot] trying strategy: ${strategy.join(' ')} for ${url}`);
+      console.log(`[screenshot] trying: chromium ${strategy.join(' ')} for ${url}`);
       const ok = await tryCapture(chromium, strategy, filepath, url, childEnv);
       if (ok) {
         const imageUrl = `/api/uploads/${filename}`;
         screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
-        console.log(`[screenshot] captured ${url} -> ${imageUrl} (strategy: ${strategy.join(' ')})`);
+        console.log(`[screenshot] captured ${url} -> ${imageUrl} (chromium ${strategy.join(' ')})`);
         return;
       }
     }
-    console.error(`[screenshot] all strategies failed for ${url}`);
+
+    // Try wkhtmltoimage
+    const wkbin = findWkhtmltoimage();
+    if (wkbin) {
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      console.log(`[screenshot] trying wkhtmltoimage for ${url}`);
+      const ok = await tryWkhtmltoimage(wkbin, url, filepath, childEnv);
+      if (ok) {
+        const imageUrl = `/api/uploads/${filename}`;
+        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
+        console.log(`[screenshot] captured ${url} -> ${imageUrl} (wkhtmltoimage)`);
+        return;
+      }
+    }
+
+    // Try cutycapt
+    const ccbin = findCutycapt();
+    if (ccbin) {
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      console.log(`[screenshot] trying cutycapt for ${url}`);
+      const ok = await tryCutycapt(ccbin, url, filepath, childEnv);
+      if (ok) {
+        const imageUrl = `/api/uploads/${filename}`;
+        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
+        console.log(`[screenshot] captured ${url} -> ${imageUrl} (cutycapt)`);
+        return;
+      }
+    }
+
+    console.error(`[screenshot] all capture methods failed for ${url}`);
     screenshotCache.delete(url);
   })();
 }
