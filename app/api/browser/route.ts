@@ -148,6 +148,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, action: 'opened', pid: activePid });
   }
 
+  if (action === 'restart-kiosk') {
+    // Kill ALL running Chromium processes, then relaunch kiosk with remote debugging
+    try {
+      require('child_process').execSync('pkill -f chromium 2>/dev/null || true');
+    } catch {}
+    await new Promise(r => setTimeout(r, 1500));
+
+    const xauth = findXauthority();
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, DISPLAY: ':0' };
+    if (xauth) childEnv.XAUTHORITY = xauth;
+
+    const kioskArgs = [
+      '--remote-debugging-port=9222',
+      '--kiosk',
+      '--noerrdialogs',
+      '--disable-infobars',
+      '--no-first-run',
+      '--autoplay-policy=no-user-gesture-required',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      'http://localhost:3000/display',
+    ];
+
+    const kiosk = execFile(chromium, kioskArgs, { env: childEnv });
+    kiosk.unref();
+
+    let kioskExited = false;
+    kiosk.on('exit', () => { kioskExited = true; });
+    await new Promise(r => setTimeout(r, 2000));
+
+    if (kioskExited) {
+      return NextResponse.json({ success: false, reason: 'kiosk chromium exited immediately — Xauth issue?' });
+    }
+    console.log(`[browser] kiosk relaunched with remote-debugging-port=9222 pid=${kiosk.pid}`);
+    return NextResponse.json({ success: true, action: 'restart-kiosk', pid: kiosk.pid });
+  }
+
   if (action === 'status') {
     return NextResponse.json({
       active: activePid !== null,
