@@ -355,6 +355,14 @@ pm2 restart pisign
 
 ## 🩺 Troubleshooting
 
+**"Could not find a production build" error**
+```bash
+# You need to build the app on the Pi before starting it
+cd ~/rasppizero2w-signage-local
+npm run build   # takes 3-5 min on Pi Zero 2W
+pm2 restart pisign
+```
+
 **App won't start after reboot**
 ```bash
 pm2 status
