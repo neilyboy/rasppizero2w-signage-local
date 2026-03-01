@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
-const execFileAsync = promisify(execFile);
-
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
-// Find the chromium binary — tries several common paths on Raspberry Pi OS / Debian
+// Server-side cache: url -> { status, imageUrl, capturedAt }
+type CacheEntry = { status: 'pending' | 'ready' | 'error'; imageUrl?: string; capturedAt?: number };
+const screenshotCache = new Map<string, CacheEntry>();
+
 function findChromium(): string {
   const candidates = [
     '/usr/bin/chromium',
@@ -25,45 +25,68 @@ function findChromium(): string {
   return 'chromium';
 }
 
+function urlToFilename(url: string): string {
+  const hash = crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
+  return `_screenshot_${hash}.png`;
+}
+
+// Fire-and-forget background capture — does not block the HTTP response
+function captureInBackground(url: string, filename: string, filepath: string) {
+  const chromium = findChromium();
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+  const args = [
+    '--headless=new',
+    '--disable-gpu',
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-software-rasterizer',
+    '--run-all-compositor-stages-before-draw',
+    '--virtual-time-budget=5000',
+    '--window-size=1920,1080',
+    `--screenshot=${filepath}`,
+    url,
+  ];
+
+  const child = execFile(chromium, args, { timeout: 45000 }, (err) => {
+    if (err || !fs.existsSync(filepath)) {
+      console.error('[screenshot] capture failed for', url, err?.message ?? 'no file');
+      screenshotCache.set(url, { status: 'error' });
+    } else {
+      const imageUrl = `/api/uploads/${filename}`;
+      screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
+      console.log('[screenshot] captured', url, '->', imageUrl);
+    }
+  });
+  child.unref();
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
+  const refresh = searchParams.get('refresh') === '1';
 
   if (!url || !url.startsWith('http')) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
-  // Deterministic filename per URL — always overwritten
-  const hash = crypto.createHash('md5').update(url).digest('hex').slice(0, 12);
-  const filename = `_screenshot_${hash}.png`;
+  const filename = urlToFilename(url);
   const filepath = path.join(UPLOADS_DIR, filename);
 
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const cached = screenshotCache.get(url);
+
+  // Return cached ready result (unless refresh forced)
+  if (cached?.status === 'ready' && cached.imageUrl && !refresh && fs.existsSync(filepath)) {
+    return NextResponse.json({ status: 'ready', url: cached.imageUrl });
   }
 
-  const chromium = findChromium();
-
-  try {
-    await execFileAsync(chromium, [
-      '--headless',
-      '--disable-gpu',
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-software-rasterizer',
-      '--window-size=1920,1080',
-      `--screenshot=${filepath}`,
-      url,
-    ], { timeout: 30000 });
-
-    if (!fs.existsSync(filepath)) {
-      return NextResponse.json({ error: 'Screenshot failed — file not created' }, { status: 500 });
-    }
-
-    return NextResponse.json({ url: `/api/uploads/${filename}`, filename });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[screenshot] error:', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  // Already capturing — return pending status immediately
+  if (cached?.status === 'pending') {
+    return NextResponse.json({ status: 'pending' });
   }
+
+  // Start a new capture in background, return pending immediately
+  screenshotCache.set(url, { status: 'pending' });
+  captureInBackground(url, filename, filepath);
+  return NextResponse.json({ status: 'pending' });
 }
