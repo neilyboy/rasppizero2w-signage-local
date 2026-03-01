@@ -7,64 +7,24 @@ import crypto from 'crypto';
 export const dynamic = 'force-dynamic';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const DISPLAY = process.env.DISPLAY ?? ':0';
 
 // Server-side cache: url -> { status, imageUrl, capturedAt }
 type CacheEntry = { status: 'pending' | 'ready' | 'error'; imageUrl?: string; capturedAt?: number };
 const screenshotCache = new Map<string, CacheEntry>();
 
-function findChromium(): string {
-  const candidates = [
+function findBin(...candidates: string[]): string | null {
+  for (const c of candidates) { if (fs.existsSync(c)) return c; }
+  return null;
+}
+
+function findChromium(): string | null {
+  return findBin(
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'chromium';
-}
-
-function findWkhtmltoimage(): string | null {
-  const candidates = ['/usr/bin/wkhtmltoimage', '/usr/local/bin/wkhtmltoimage'];
-  for (const c of candidates) { if (fs.existsSync(c)) return c; }
-  return null;
-}
-
-function findCutycapt(): string | null {
-  const candidates = ['/usr/bin/cutycapt', '/usr/local/bin/cutycapt'];
-  for (const c of candidates) { if (fs.existsSync(c)) return c; }
-  return null;
-}
-
-function tryWkhtmltoimage(bin: string, url: string, filepath: string, childEnv: NodeJS.ProcessEnv): Promise<boolean> {
-  return new Promise((resolve) => {
-    const args = ['--width', '1920', '--height', '1080', '--javascript-delay', '2000', url, filepath];
-    const stderrLines: string[] = [];
-    const child = spawn(bin, args, { env: childEnv, timeout: 60000 });
-    child.stderr.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) stderrLines.push(l); });
-    child.on('close', (code) => {
-      const ok = fs.existsSync(filepath);
-      if (!ok) console.error(`[screenshot] wkhtmltoimage failed (code=${code}): ${stderrLines.slice(-2).join(' | ')}`);
-      resolve(ok);
-    });
-    child.on('error', (err) => { console.error('[screenshot] wkhtmltoimage error:', err.message); resolve(false); });
-  });
-}
-
-function tryCutycapt(bin: string, url: string, filepath: string, childEnv: NodeJS.ProcessEnv): Promise<boolean> {
-  return new Promise((resolve) => {
-    const args = [`--url=${url}`, `--out=${filepath}`, '--min-width=1920', '--delay=3000'];
-    const stderrLines: string[] = [];
-    const child = spawn(bin, args, { env: { ...childEnv, DISPLAY: ':0' }, timeout: 60000 });
-    child.stderr.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) stderrLines.push(l); });
-    child.on('close', (code) => {
-      const ok = fs.existsSync(filepath);
-      if (!ok) console.error(`[screenshot] cutycapt failed (code=${code}): ${stderrLines.slice(-2).join(' | ')}`);
-      resolve(ok);
-    });
-    child.on('error', (err) => { console.error('[screenshot] cutycapt error:', err.message); resolve(false); });
-  });
+  );
 }
 
 function urlToFilename(url: string): string {
@@ -72,58 +32,101 @@ function urlToFilename(url: string): string {
   return `_screenshot_${hash}.png`;
 }
 
-const BASE_ARGS = [
-  '--no-sandbox',
-  '--no-zygote',
-  '--single-process',
-  '--disable-gpu',
-  '--disable-dev-shm-usage',
-  '--disable-software-rasterizer',
-  '--ignore-certificate-errors',
-  '--ignore-ssl-errors',
-  '--ignore-certificate-errors-spki-list',
-  '--allow-insecure-localhost',
-  '--disable-web-security',
-  '--user-agent=Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  '--window-size=1920,1080',
-];
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-// Headless strategies to try in order — first one that produces a file wins
-const HEADLESS_STRATEGIES = [
-  ['--headless=new'],
-  ['--headless=chrome'],
-  ['--headless'],
-  ['--headless', '--ozone-platform=headless'],
-];
-
-function tryCapture(
-  chromium: string,
-  strategyArgs: string[],
-  filepath: string,
-  url: string,
-  childEnv: NodeJS.ProcessEnv,
-): Promise<boolean> {
+function runCmd(bin: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = 30000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const args = [...strategyArgs, ...BASE_ARGS, `--screenshot=${filepath}`, url];
-    const stderrLines: string[] = [];
-    const child = spawn(chromium, args, { env: childEnv, timeout: 60000 });
-    child.stderr.on('data', (d: Buffer) => {
-      const line = d.toString().trim();
-      if (line) stderrLines.push(line);
-    });
-    child.on('close', (code) => {
-      const ok = code === 0 && fs.existsSync(filepath);
-      if (!ok) {
-        const detail = stderrLines.filter(l => !l.includes('WARNING') && !l.includes('Fontconfig')).slice(-3).join(' | ');
-        console.error(`[screenshot] strategy ${strategyArgs.join(' ')} failed (code=${code}): ${detail}`);
-      }
-      resolve(ok);
-    });
-    child.on('error', (err) => {
-      console.error('[screenshot] spawn error:', err.message);
-      resolve(false);
-    });
+    const outLines: string[] = [];
+    const errLines: string[] = [];
+    const child = spawn(bin, args, { env, timeout: timeoutMs });
+    child.stdout.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) outLines.push(l); });
+    child.stderr.on('data', (d: Buffer) => { const l = d.toString().trim(); if (l) errLines.push(l); });
+    child.on('close', (code) => resolve({ ok: code === 0, stdout: outLines.join('\n'), stderr: errLines.slice(-4).join(' | ') }));
+    child.on('error', (err) => resolve({ ok: false, stdout: '', stderr: err.message }));
   });
+}
+
+// Strategy A: use scrot/import to screenshot screen after navigating kiosk Chromium via xdotool
+async function tryScrotStrategy(url: string, filepath: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const scrot = findBin('/usr/bin/scrot', '/usr/bin/import');
+  const xdotool = findBin('/usr/bin/xdotool');
+  if (!scrot || !xdotool) {
+    console.log('[screenshot] scrot/xdotool not found, skipping screen-capture strategy');
+    return false;
+  }
+
+  try {
+    // Find existing Chromium window ID via xdotool stdout
+    const searchResult = await runCmd(xdotool, ['search', '--onlyvisible', '--class', 'Chromium'], env, 5000);
+    const winId = searchResult.stdout.trim().split('\n')[0];
+    if (!winId) {
+      console.log('[screenshot] no visible Chromium window found for scrot strategy');
+      return false;
+    }
+    console.log(`[screenshot] found Chromium window ${winId}, navigating to ${url}`);
+
+    // Navigate to URL: focus window, open omnibox, type URL, press Enter
+    await runCmd(xdotool, ['windowactivate', '--sync', winId], env, 3000);
+    await runCmd(xdotool, ['key', '--window', winId, 'ctrl+l'], env, 2000);
+    await sleep(400);
+    await runCmd(xdotool, ['type', '--window', winId, '--clearmodifiers', '--delay', '20', url], env, 10000);
+    await runCmd(xdotool, ['key', '--window', winId, 'Return'], env, 2000);
+
+    // Wait for page to render
+    await sleep(5000);
+
+    // Take screenshot of the full screen
+    const tmpFile = filepath + '.tmp.png';
+    let captured = false;
+    if (scrot.includes('scrot')) {
+      const r = await runCmd(scrot, [tmpFile], { ...env, DISPLAY: env.DISPLAY ?? ':0' }, 10000);
+      captured = r.ok && fs.existsSync(tmpFile);
+      if (!captured) console.error('[screenshot] scrot failed:', r.stderr);
+    } else {
+      // ImageMagick import
+      const r = await runCmd(scrot, ['-window', 'root', tmpFile], { ...env, DISPLAY: env.DISPLAY ?? ':0' }, 10000);
+      captured = r.ok && fs.existsSync(tmpFile);
+      if (!captured) console.error('[screenshot] import failed:', r.stderr);
+    }
+
+    if (captured) {
+      fs.renameSync(tmpFile, filepath);
+      return true;
+    }
+  } catch (e) {
+    console.error('[screenshot] scrot strategy error:', e);
+  }
+  return false;
+}
+
+// Strategy B: Chromium headless — tries multiple flag combinations
+async function tryChromiumHeadless(chromium: string, url: string, filepath: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const BASE = [
+    '--no-sandbox', '--no-zygote', '--single-process',
+    '--disable-gpu', '--disable-dev-shm-usage', '--disable-software-rasterizer',
+    '--ignore-certificate-errors', '--ignore-ssl-errors',
+    '--ignore-certificate-errors-spki-list', '--allow-insecure-localhost',
+    '--disable-web-security',
+    '--user-agent=Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    '--window-size=1920,1080',
+  ];
+  const strategies = [
+    ['--headless=new'],
+    ['--headless=chrome'],
+    ['--headless'],
+    ['--headless', '--ozone-platform=headless'],
+    ['--headless', '--enable-features=UseOzonePlatform', '--ozone-platform=headless'],
+  ];
+  for (const s of strategies) {
+    if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+    const args = [...s, ...BASE, `--screenshot=${filepath}`, url];
+    console.log(`[screenshot] trying chromium ${s.join(' ')}`)
+    const r = await runCmd(chromium, args, env, 60000);
+    if (fs.existsSync(filepath)) return true;
+    const errSnip = r.stderr.split('|').filter((l: string) => !l.includes('WARNING') && !l.includes('Fontconfig') && !l.includes('Gtk')).slice(-2).join('|');
+    if (errSnip) console.error(`[screenshot] chromium ${s[0]} failed: ${errSnip}`);
+  }
+  return false;
 }
 
 // Fire-and-forget background capture — does not block the HTTP response
@@ -133,46 +136,17 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
 
   (async () => {
-    // Try Chromium headless strategies first
-    for (const strategy of HEADLESS_STRATEGIES) {
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-      console.log(`[screenshot] trying: chromium ${strategy.join(' ')} for ${url}`);
-      const ok = await tryCapture(chromium, strategy, filepath, url, childEnv);
-      if (ok) {
-        const imageUrl = `/api/uploads/${filename}`;
-        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
-        console.log(`[screenshot] captured ${url} -> ${imageUrl} (chromium ${strategy.join(' ')})`);
-        return;
-      }
-    }
+    const success = (method: string) => {
+      const imageUrl = `/api/uploads/${filename}`;
+      screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
+      console.log(`[screenshot] captured ${url} via ${method}`);
+    };
 
-    // Try wkhtmltoimage
-    const wkbin = findWkhtmltoimage();
-    if (wkbin) {
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-      console.log(`[screenshot] trying wkhtmltoimage for ${url}`);
-      const ok = await tryWkhtmltoimage(wkbin, url, filepath, childEnv);
-      if (ok) {
-        const imageUrl = `/api/uploads/${filename}`;
-        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
-        console.log(`[screenshot] captured ${url} -> ${imageUrl} (wkhtmltoimage)`);
-        return;
-      }
-    }
+    // Strategy A: scrot + xdotool (uses existing kiosk Chromium, no headless needed)
+    if (await tryScrotStrategy(url, filepath, childEnv)) { success('scrot+xdotool'); return; }
 
-    // Try cutycapt
-    const ccbin = findCutycapt();
-    if (ccbin) {
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-      console.log(`[screenshot] trying cutycapt for ${url}`);
-      const ok = await tryCutycapt(ccbin, url, filepath, childEnv);
-      if (ok) {
-        const imageUrl = `/api/uploads/${filename}`;
-        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
-        console.log(`[screenshot] captured ${url} -> ${imageUrl} (cutycapt)`);
-        return;
-      }
-    }
+    // Strategy B: Chromium headless
+    if (chromium && await tryChromiumHeadless(chromium, url, filepath, childEnv)) { success('chromium-headless'); return; }
 
     console.error(`[screenshot] all capture methods failed for ${url}`);
     screenshotCache.delete(url);
