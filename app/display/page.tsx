@@ -235,59 +235,88 @@ function StatsDisplay({ widget }: { widget: StatsWidget }) {
   );
 }
 
-/* ─── Webpage display — screenshot only, polls until ready ─── */
-function WebpageDisplay({ url, style }: { url: string; style: React.CSSProperties }) {
+/* ─── Webpage display — live Chromium window on Pi, screenshot fallback elsewhere ─── */
+function WebpageDisplay({ url, style, onEnded }: { url: string; style: React.CSSProperties; onEnded?: () => void }) {
+  // 'browser' = real Chromium kiosk window (Pi), 'screenshot' = screenshot fallback, 'loading' = waiting
+  const [mode, setMode] = useState<'loading' | 'browser' | 'screenshot'>('loading');
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const browserOpenRef = useRef(false);
 
   useEffect(() => {
+    setMode('loading');
     setScreenshotUrl(null);
-    setFailed(false);
+    browserOpenRef.current = false;
     if (pollRef.current) clearInterval(pollRef.current);
 
+    // Try to open a real Chromium kiosk window
+    fetch('/api/browser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'open', url }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          browserOpenRef.current = true;
+          setMode('browser');
+        } else {
+          // Not on Pi or chromium not found — fall back to screenshot
+          startScreenshotPoll();
+        }
+      })
+      .catch(() => startScreenshotPoll());
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      // Close browser window when asset unmounts (next asset takes over)
+      if (browserOpenRef.current) {
+        fetch('/api/browser', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'close' }),
+        }).catch(() => {});
+        browserOpenRef.current = false;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  function startScreenshotPoll() {
     const poll = async () => {
       try {
         const res = await fetch(`/api/screenshot?url=${encodeURIComponent(url)}`);
         const data = await res.json();
         if (data.status === 'ready' && data.url) {
           setScreenshotUrl(data.url + '?t=' + Date.now());
+          setMode('screenshot');
           if (pollRef.current) clearInterval(pollRef.current);
         }
-        // pending or error: keep polling, server will retry automatically
-      } catch {
-        // network error: keep polling
-      }
+      } catch { /* keep polling */ }
     };
-
     poll();
     pollRef.current = setInterval(poll, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [url]);
+  }
 
-  if (failed) {
+  // In browser mode — the Chromium window covers the screen at the OS level.
+  // Render a transparent black placeholder so the Next.js overlay (clock/ticker) still works.
+  if (mode === 'browser') {
+    return <div style={{ ...style, background: 'transparent' }} />;
+  }
+
+  if (mode === 'screenshot' && screenshotUrl) {
     return (
-      <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 16 }}>
-        <div style={{ fontSize: 48 }}>🌐</div>
-        <div style={{ fontSize: 'clamp(16px, 3vw, 36px)', fontWeight: 700, color: 'white', textAlign: 'center' }}>{url}</div>
-        <div style={{ fontSize: 'clamp(12px, 1.5vw, 18px)', color: 'rgba(255,255,255,0.4)', textAlign: 'center', maxWidth: 600 }}>Could not capture screenshot of this page.</div>
+      <div style={{ ...style, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img src={screenshotUrl} alt={url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
       </div>
     );
   }
 
-  if (!screenshotUrl) {
-    return (
-      <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 20 }}>
-        <div style={{ width: 56, height: 56, borderRadius: '50%', border: '4px solid rgba(59,130,246,0.2)', borderTop: '4px solid #3b82f6', animation: 'spin 1s linear infinite' }} />
-        <div style={{ fontSize: 'clamp(14px, 2vw, 22px)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>Capturing screenshot…</div>
-        <div style={{ fontSize: 'clamp(11px, 1.2vw, 16px)', color: 'rgba(255,255,255,0.25)', textAlign: 'center', maxWidth: 500 }}>{url}</div>
-      </div>
-    );
-  }
-
+  // Loading state (either waiting for browser to open or screenshot to arrive)
   return (
-    <div style={{ ...style, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <img src={screenshotUrl} alt={url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+    <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 20 }}>
+      <div style={{ width: 56, height: 56, borderRadius: '50%', border: '4px solid rgba(59,130,246,0.2)', borderTop: '4px solid #3b82f6', animation: 'spin 1s linear infinite' }} />
+      <div style={{ fontSize: 'clamp(14px, 2vw, 22px)', color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>Loading {url}</div>
     </div>
   );
 }
@@ -346,7 +375,7 @@ function AssetDisplay({ asset, transition, onEnded }: {
   }
 
   if (asset.type === 'webpage') {
-    return <WebpageDisplay url={asset.url ?? ''} style={style} />;
+    return <WebpageDisplay url={asset.url ?? ''} style={style} onEnded={onEnded} />;
   }
 
   if (asset.type === 'text' || asset.type === 'announcement') {
