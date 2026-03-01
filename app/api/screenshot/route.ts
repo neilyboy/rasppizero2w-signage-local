@@ -3,15 +3,17 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import http from 'http';
 
 export const dynamic = 'force-dynamic';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
-const DISPLAY = process.env.DISPLAY ?? ':0';
+const DISPLAY_VAL = ':0';
+const CDP_PORT = 9222;
 
 function findXauthority(): string | undefined {
   const candidates = [
-    '/tmp/.Xauthority-pisign',   // set by xinitrc at X startup
+    '/tmp/.Xauthority-pisign',
     process.env.XAUTHORITY,
     `${process.env.HOME}/.Xauthority`,
     '/run/user/1000/gdm/Xauthority',
@@ -20,6 +22,119 @@ function findXauthority(): string | undefined {
     if (fs.existsSync(c)) return c;
   }
   return undefined;
+}
+
+// Simple HTTP GET helper for CDP JSON endpoints
+function httpGet(url: string, timeoutMs = 5000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+// WebSocket send/receive for CDP commands
+function cdpCommand(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(wsUrl);
+    const id = Math.floor(Math.random() * 100000);
+    const msg = JSON.stringify({ id, method, params });
+
+    // Use Node's built-in net to do a raw WebSocket upgrade
+    const net = require('net');
+    const socket = net.createConnection({ host: url.hostname, port: parseInt(url.port || '9222') }, () => {
+      const key = Buffer.from(crypto.randomBytes(16)).toString('base64');
+      const handshake = [
+        `GET ${url.pathname} HTTP/1.1`,
+        `Host: ${url.host}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        `Sec-WebSocket-Key: ${key}`,
+        'Sec-WebSocket-Version: 13',
+        '', '',
+      ].join('\r\n');
+      socket.write(handshake);
+    });
+
+    let upgraded = false;
+    let buf = Buffer.alloc(0);
+
+    socket.setTimeout(10000);
+    socket.on('timeout', () => { socket.destroy(); reject(new Error('ws timeout')); });
+    socket.on('error', reject);
+
+    socket.on('data', (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (!upgraded) {
+        const head = buf.toString();
+        if (head.includes('\r\n\r\n')) {
+          upgraded = true;
+          // Send the CDP command as a WebSocket text frame
+          const payload = Buffer.from(msg);
+          const frame = Buffer.alloc(2 + payload.length);
+          frame[0] = 0x81; // FIN + text opcode
+          frame[1] = payload.length;
+          payload.copy(frame, 2);
+          socket.write(frame);
+          buf = Buffer.alloc(0);
+        }
+        return;
+      }
+      // Parse WebSocket frame
+      if (buf.length < 2) return;
+      const payloadLen = buf[1] & 0x7f;
+      const headerLen = 2 + (payloadLen === 126 ? 2 : payloadLen === 127 ? 8 : 0);
+      if (buf.length < headerLen + payloadLen) return;
+      const payload = buf.slice(headerLen, headerLen + payloadLen).toString();
+      try {
+        const parsed = JSON.parse(payload);
+        if (parsed.id === id) {
+          socket.destroy();
+          if (parsed.error) reject(new Error(parsed.error.message));
+          else resolve(parsed.result);
+        }
+      } catch { /* partial frame, wait for more */ }
+    });
+  });
+}
+
+// Strategy A: CDP via existing kiosk Chromium on port 9222
+async function tryCDPScreenshot(url: string, filepath: string): Promise<boolean> {
+  try {
+    // Check if CDP is available
+    const listJson = await httpGet(`http://localhost:${CDP_PORT}/json/list`, 3000);
+    const targets = JSON.parse(listJson) as Array<{ id: string; type: string; webSocketDebuggerUrl: string }>;
+
+    // Create a new target (tab) for our screenshot
+    const newTarget = await httpGet(`http://localhost:${CDP_PORT}/json/new?${encodeURIComponent(url)}`, 5000);
+    const target = JSON.parse(newTarget) as { id: string; webSocketDebuggerUrl: string };
+    const wsUrl = target.webSocketDebuggerUrl;
+
+    if (!wsUrl) throw new Error('no webSocketDebuggerUrl');
+    console.log(`[screenshot] CDP: opened tab ${target.id} for ${url}`);
+
+    // Wait for page to load
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Capture screenshot
+    const result = await cdpCommand(wsUrl, 'Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }) as { data: string };
+
+    // Close the tab
+    await httpGet(`http://localhost:${CDP_PORT}/json/close/${target.id}`, 3000).catch(() => {});
+
+    if (result?.data) {
+      fs.writeFileSync(filepath, Buffer.from(result.data, 'base64'));
+      console.log(`[screenshot] CDP screenshot saved to ${filepath}`);
+      return true;
+    }
+  } catch (e) {
+    console.log(`[screenshot] CDP not available: ${(e as Error).message}`);
+  }
+  return false;
 }
 
 // Server-side cache: url -> { status, imageUrl, capturedAt }
@@ -147,9 +262,11 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const chromium = findChromium();
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   const xauth = findXauthority();
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, DISPLAY: DISPLAY_VAL };
   if (xauth) childEnv.XAUTHORITY = xauth;
-  console.log(`[screenshot] env DISPLAY=${childEnv.DISPLAY} XAUTHORITY=${xauth ?? 'not found'}`);
+  // Ensure X access is open for local connections (no-op if already open)
+  try { require('child_process').execSync(`DISPLAY=${DISPLAY_VAL} xhost +local: 2>/dev/null`, { env: childEnv }); } catch {}
+  console.log(`[screenshot] env DISPLAY=${DISPLAY_VAL} XAUTHORITY=${xauth ?? 'none (no-auth X server)'}`);
 
   (async () => {
     const success = (method: string) => {
@@ -158,10 +275,13 @@ function captureInBackground(url: string, filename: string, filepath: string) {
       console.log(`[screenshot] captured ${url} via ${method}`);
     };
 
-    // Strategy A: scrot + xdotool (uses existing kiosk Chromium, no headless needed)
+    // Strategy A: CDP via kiosk Chromium on port 9222 (no X auth needed)
+    if (await tryCDPScreenshot(url, filepath)) { success('CDP'); return; }
+
+    // Strategy B: scrot + xdotool
     if (await tryScrotStrategy(url, filepath, childEnv)) { success('scrot+xdotool'); return; }
 
-    // Strategy B: Chromium headless
+    // Strategy C: Chromium headless
     if (chromium && await tryChromiumHeadless(chromium, url, filepath, childEnv)) { success('chromium-headless'); return; }
 
     console.error(`[screenshot] all capture methods failed for ${url}`);

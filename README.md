@@ -181,7 +181,7 @@ cat > ~/.config/autostart/pisign-kiosk.desktop << 'EOF'
 [Desktop Entry]
 Type=Application
 Name=PiSign Kiosk
-Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble http://localhost:3000/display
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble --remote-debugging-port=9222 http://localhost:3000/display
 X-GNOME-Autostart-enabled=true
 EOF
 
@@ -204,7 +204,7 @@ xset -dpms
 cp "$XAUTHORITY" /tmp/.Xauthority-pisign 2>/dev/null || xauth extract /tmp/.Xauthority-pisign :0
 chmod 600 /tmp/.Xauthority-pisign
 unclutter -idle 0 -root &
-exec chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
+exec chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required --remote-debugging-port=9222 http://localhost:3000/display
 EOF
 
 # Auto-start X on login (single quotes prevent variable expansion)
