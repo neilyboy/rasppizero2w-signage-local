@@ -36,13 +36,12 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
   const args = [
-    '--headless=new',
+    '--headless',
     '--disable-gpu',
     '--no-sandbox',
+    '--no-zygote',
     '--disable-dev-shm-usage',
     '--disable-software-rasterizer',
-    '--run-all-compositor-stages-before-draw',
-    '--virtual-time-budget=5000',
     '--ignore-certificate-errors',
     '--ignore-ssl-errors',
     '--ignore-certificate-errors-spki-list',
@@ -54,7 +53,9 @@ function captureInBackground(url: string, filename: string, filepath: string) {
     url,
   ];
 
-  const child = execFile(chromium, args, { timeout: 45000 }, (err) => {
+  const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
+
+  const child = execFile(chromium, args, { timeout: 45000, env: childEnv }, (err) => {
     if (err || !fs.existsSync(filepath)) {
       console.error('[screenshot] capture failed for', url, err?.message ?? 'no file');
       // Delete from cache so next request retries rather than staying stuck

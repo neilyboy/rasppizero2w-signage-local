@@ -1,8 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execFile, ChildProcess } from 'child_process';
+import { execFile, ChildProcess, execSync } from 'child_process';
 import fs from 'fs';
 
 export const dynamic = 'force-dynamic';
+
+function findXauthority(): string | undefined {
+  // Try common locations
+  const candidates = [
+    process.env.XAUTHORITY,
+    `${process.env.HOME}/.Xauthority`,
+    '/run/user/1000/gdm/Xauthority',
+    '/tmp/.Xauthority',
+  ].filter(Boolean) as string[];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+
+  // Try xauth info to find it
+  try {
+    const out = execSync('xauth info 2>/dev/null', { env: { ...process.env, DISPLAY: ':0' } }).toString();
+    const match = out.match(/Authority file:\s*(.+)/);
+    if (match?.[1]) return match[1].trim();
+  } catch { /* ignore */ }
+
+  return undefined;
+}
 
 // Module-level state — persists across requests in the same server process
 let activeBrowser: ChildProcess | null = null;
@@ -78,9 +101,14 @@ export async function POST(req: NextRequest) {
       url,
     ];
 
-    const child = execFile(chromium, args, {
-      env: { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' },
-    });
+    const xauth = findXauthority();
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      DISPLAY: process.env.DISPLAY ?? ':0',
+    };
+    if (xauth) childEnv.XAUTHORITY = xauth;
+
+    const child = execFile(chromium, args, { env: childEnv });
 
     activeBrowser = child;
     activePid = child.pid ?? null;
