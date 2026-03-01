@@ -6,6 +6,10 @@ import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
+function hasXvfb(): boolean {
+  return fs.existsSync('/usr/bin/xvfb-run') || fs.existsSync('/usr/local/bin/xvfb-run');
+}
+
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 // Server-side cache: url -> { status, imageUrl, capturedAt }
@@ -35,7 +39,7 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const chromium = findChromium();
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-  const args = [
+  const chromiumArgs = [
     '--headless',
     '--disable-gpu',
     '--no-sandbox',
@@ -53,9 +57,20 @@ function captureInBackground(url: string, filename: string, filepath: string) {
     url,
   ];
 
+  // Use xvfb-run if available to provide a virtual display (avoids 'cannot open display' on Pi)
+  let bin: string;
+  let args: string[];
+  if (hasXvfb()) {
+    bin = 'xvfb-run';
+    args = ['--auto-servernum', '--server-args=-screen 0 1920x1080x24', chromium, ...chromiumArgs];
+  } else {
+    bin = chromium;
+    args = chromiumArgs;
+  }
+
   const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
 
-  const child = execFile(chromium, args, { timeout: 45000, env: childEnv }, (err) => {
+  const child = execFile(bin, args, { timeout: 60000, env: childEnv }, (err) => {
     if (err || !fs.existsSync(filepath)) {
       console.error('[screenshot] capture failed for', url, err?.message ?? 'no file');
       // Delete from cache so next request retries rather than staying stuck
