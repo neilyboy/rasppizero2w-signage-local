@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execFile } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
-
-function hasXvfb(): boolean {
-  return fs.existsSync('/usr/bin/xvfb-run') || fs.existsSync('/usr/local/bin/xvfb-run');
-}
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
@@ -39,11 +35,12 @@ function captureInBackground(url: string, filename: string, filepath: string) {
   const chromium = findChromium();
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-  const chromiumArgs = [
-    '--headless',
+  const args = [
+    '--headless=new',
     '--disable-gpu',
     '--no-sandbox',
     '--no-zygote',
+    '--single-process',
     '--disable-dev-shm-usage',
     '--disable-software-rasterizer',
     '--ignore-certificate-errors',
@@ -57,23 +54,21 @@ function captureInBackground(url: string, filename: string, filepath: string) {
     url,
   ];
 
-  // Use xvfb-run if available to provide a virtual display (avoids 'cannot open display' on Pi)
-  let bin: string;
-  let args: string[];
-  if (hasXvfb()) {
-    bin = 'xvfb-run';
-    args = ['--auto-servernum', '--server-args=-screen 0 1920x1080x24', chromium, ...chromiumArgs];
-  } else {
-    bin = chromium;
-    args = chromiumArgs;
-  }
-
+  // Pass DISPLAY through — needed even for headless on some Pi Chromium builds
   const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
 
-  const child = execFile(bin, args, { timeout: 60000, env: childEnv }, (err) => {
-    if (err || !fs.existsSync(filepath)) {
-      console.error('[screenshot] capture failed for', url, err?.message ?? 'no file');
-      // Delete from cache so next request retries rather than staying stuck
+  const stderrLines: string[] = [];
+  const child = spawn(chromium, args, { env: childEnv, timeout: 60000 });
+
+  child.stderr.on('data', (d: Buffer) => {
+    const line = d.toString().trim();
+    if (line) stderrLines.push(line);
+  });
+
+  child.on('close', (code) => {
+    if (code !== 0 || !fs.existsSync(filepath)) {
+      const errDetail = stderrLines.slice(-5).join(' | ');
+      console.error(`[screenshot] failed (code=${code}) for ${url} | ${errDetail}`);
       screenshotCache.delete(url);
     } else {
       const imageUrl = `/api/uploads/${filename}`;
@@ -81,6 +76,12 @@ function captureInBackground(url: string, filename: string, filepath: string) {
       console.log('[screenshot] captured', url, '->', imageUrl);
     }
   });
+
+  child.on('error', (err) => {
+    console.error('[screenshot] spawn error:', err.message);
+    screenshotCache.delete(url);
+  });
+
   child.unref();
 }
 
