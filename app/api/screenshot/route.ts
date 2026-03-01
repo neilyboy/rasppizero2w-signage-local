@@ -30,59 +30,82 @@ function urlToFilename(url: string): string {
   return `_screenshot_${hash}.png`;
 }
 
+const BASE_ARGS = [
+  '--no-sandbox',
+  '--no-zygote',
+  '--single-process',
+  '--disable-gpu',
+  '--disable-dev-shm-usage',
+  '--disable-software-rasterizer',
+  '--ignore-certificate-errors',
+  '--ignore-ssl-errors',
+  '--ignore-certificate-errors-spki-list',
+  '--allow-insecure-localhost',
+  '--disable-web-security',
+  '--user-agent=Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  '--window-size=1920,1080',
+];
+
+// Headless strategies to try in order — first one that produces a file wins
+const HEADLESS_STRATEGIES = [
+  ['--headless=new'],
+  ['--headless=chrome'],
+  ['--headless'],
+  ['--headless', '--ozone-platform=headless'],
+];
+
+function tryCapture(
+  chromium: string,
+  strategyArgs: string[],
+  filepath: string,
+  url: string,
+  childEnv: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const args = [...strategyArgs, ...BASE_ARGS, `--screenshot=${filepath}`, url];
+    const stderrLines: string[] = [];
+    const child = spawn(chromium, args, { env: childEnv, timeout: 60000 });
+    child.stderr.on('data', (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line) stderrLines.push(line);
+    });
+    child.on('close', (code) => {
+      const ok = code === 0 && fs.existsSync(filepath);
+      if (!ok) {
+        const detail = stderrLines.filter(l => !l.includes('WARNING') && !l.includes('Fontconfig')).slice(-3).join(' | ');
+        console.error(`[screenshot] strategy ${strategyArgs.join(' ')} failed (code=${code}): ${detail}`);
+      }
+      resolve(ok);
+    });
+    child.on('error', (err) => {
+      console.error('[screenshot] spawn error:', err.message);
+      resolve(false);
+    });
+  });
+}
+
 // Fire-and-forget background capture — does not block the HTTP response
 function captureInBackground(url: string, filename: string, filepath: string) {
   const chromium = findChromium();
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-  const args = [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-sandbox',
-    '--no-zygote',
-    '--single-process',
-    '--disable-dev-shm-usage',
-    '--disable-software-rasterizer',
-    '--ignore-certificate-errors',
-    '--ignore-ssl-errors',
-    '--ignore-certificate-errors-spki-list',
-    '--allow-insecure-localhost',
-    '--disable-web-security',
-    '--user-agent=Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    '--window-size=1920,1080',
-    `--screenshot=${filepath}`,
-    url,
-  ];
-
-  // Pass DISPLAY through — needed even for headless on some Pi Chromium builds
   const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
 
-  const stderrLines: string[] = [];
-  const child = spawn(chromium, args, { env: childEnv, timeout: 60000 });
-
-  child.stderr.on('data', (d: Buffer) => {
-    const line = d.toString().trim();
-    if (line) stderrLines.push(line);
-  });
-
-  child.on('close', (code) => {
-    if (code !== 0 || !fs.existsSync(filepath)) {
-      const errDetail = stderrLines.slice(-5).join(' | ');
-      console.error(`[screenshot] failed (code=${code}) for ${url} | ${errDetail}`);
-      screenshotCache.delete(url);
-    } else {
-      const imageUrl = `/api/uploads/${filename}`;
-      screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
-      console.log('[screenshot] captured', url, '->', imageUrl);
+  (async () => {
+    for (const strategy of HEADLESS_STRATEGIES) {
+      // Remove old file so we can check if this strategy created it
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      console.log(`[screenshot] trying strategy: ${strategy.join(' ')} for ${url}`);
+      const ok = await tryCapture(chromium, strategy, filepath, url, childEnv);
+      if (ok) {
+        const imageUrl = `/api/uploads/${filename}`;
+        screenshotCache.set(url, { status: 'ready', imageUrl, capturedAt: Date.now() });
+        console.log(`[screenshot] captured ${url} -> ${imageUrl} (strategy: ${strategy.join(' ')})`);
+        return;
+      }
     }
-  });
-
-  child.on('error', (err) => {
-    console.error('[screenshot] spawn error:', err.message);
+    console.error(`[screenshot] all strategies failed for ${url}`);
     screenshotCache.delete(url);
-  });
-
-  child.unref();
+  })();
 }
 
 export async function GET(req: NextRequest) {
