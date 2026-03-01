@@ -200,6 +200,9 @@ cat > ~/.xinitrc << 'EOF'
 xset s off
 xset s noblank
 xset -dpms
+# Copy Xauthority to a fixed path so pm2 services can access the display
+cp "$XAUTHORITY" /tmp/.Xauthority-pisign 2>/dev/null || xauth extract /tmp/.Xauthority-pisign :0
+chmod 600 /tmp/.Xauthority-pisign
 unclutter -idle 0 -root &
 exec chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:3000/display
 EOF

@@ -10,7 +10,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         DISPLAY: ':0',
-        XAUTHORITY: path.join(process.env.HOME || '/home/neil', '.Xauthority'),
+        XAUTHORITY: '/tmp/.Xauthority-pisign',
       },
     },
   ],

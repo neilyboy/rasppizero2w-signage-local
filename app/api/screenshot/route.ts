@@ -9,6 +9,19 @@ export const dynamic = 'force-dynamic';
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 const DISPLAY = process.env.DISPLAY ?? ':0';
 
+function findXauthority(): string | undefined {
+  const candidates = [
+    '/tmp/.Xauthority-pisign',   // set by xinitrc at X startup
+    process.env.XAUTHORITY,
+    `${process.env.HOME}/.Xauthority`,
+    '/run/user/1000/gdm/Xauthority',
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return undefined;
+}
+
 // Server-side cache: url -> { status, imageUrl, capturedAt }
 type CacheEntry = { status: 'pending' | 'ready' | 'error'; imageUrl?: string; capturedAt?: number };
 const screenshotCache = new Map<string, CacheEntry>();
@@ -133,7 +146,10 @@ async function tryChromiumHeadless(chromium: string, url: string, filepath: stri
 function captureInBackground(url: string, filename: string, filepath: string) {
   const chromium = findChromium();
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  const childEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
+  const xauth = findXauthority();
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, DISPLAY: process.env.DISPLAY ?? ':0' };
+  if (xauth) childEnv.XAUTHORITY = xauth;
+  console.log(`[screenshot] env DISPLAY=${childEnv.DISPLAY} XAUTHORITY=${xauth ?? 'not found'}`);
 
   (async () => {
     const success = (method: string) => {
