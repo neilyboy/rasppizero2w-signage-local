@@ -235,43 +235,98 @@ function StatsDisplay({ widget }: { widget: StatsWidget }) {
   );
 }
 
-/* ─── Webpage display with CSP fallback ─── */
-function WebpageDisplay({ url, style }: { url: string; style: React.CSSProperties }) {
-  const [blocked, setBlocked] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+/* ─── Webpage display with auto-screenshot fallback ─── */
+type ScreenshotState = 'iframe' | 'screenshotting' | 'screenshot' | 'error';
 
+function WebpageDisplay({ url, style }: { url: string; style: React.CSSProperties }) {
+  const [state, setState] = useState<ScreenshotState>('iframe');
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const screenshotting = useRef(false);
+
+  const takeScreenshot = useCallback(async () => {
+    if (screenshotting.current) return;
+    screenshotting.current = true;
+    setState('screenshotting');
+    try {
+      const res = await fetch(`/api/screenshot?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (data.url) {
+        setScreenshotUrl(data.url + '?t=' + Date.now());
+        setState('screenshot');
+      } else {
+        setState('error');
+      }
+    } catch {
+      setState('error');
+    } finally {
+      screenshotting.current = false;
+    }
+  }, [url]);
+
+  // Reset and re-screenshot each time the URL changes (new asset cycle)
   useEffect(() => {
-    setBlocked(false);
+    setState('iframe');
+    setScreenshotUrl(null);
+    screenshotting.current = false;
+
+    // Give iframe 4s to load — if it can't be read (CSP), fall back to screenshot
     const timer = setTimeout(() => {
       try {
         const doc = iframeRef.current?.contentDocument;
-        if (!doc || doc.body === null || doc.body.innerHTML === '') setBlocked(true);
+        if (!doc || doc.body === null || doc.body.innerHTML === '') {
+          takeScreenshot();
+        }
       } catch {
-        setBlocked(true);
+        // SecurityError = cross-origin = iframe loaded but CSP blocked JS access
+        // In this case iframe may actually be showing content, keep it
+        // But if we got a console CSP error the iframe will be blank — screenshot
+        takeScreenshot();
       }
-    }, 3000);
+    }, 4000);
     return () => clearTimeout(timer);
-  }, [url]);
+  }, [url, takeScreenshot]);
 
-  if (blocked) {
+  if (state === 'screenshotting') {
+    return (
+      <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 20 }}>
+        <div style={{ width: 56, height: 56, borderRadius: '50%', border: '4px solid rgba(59,130,246,0.2)', borderTop: '4px solid #3b82f6', animation: 'spin 1s linear infinite' }} />
+        <div style={{ fontSize: 'clamp(14px, 2vw, 24px)', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+          Capturing screenshot…
+        </div>
+        <div style={{ fontSize: 'clamp(11px, 1.2vw, 16px)', color: 'rgba(255,255,255,0.3)', textAlign: 'center', maxWidth: 500 }}>{url}</div>
+      </div>
+    );
+  }
+
+  if (state === 'screenshot' && screenshotUrl) {
+    return (
+      <div style={{ ...style, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img src={screenshotUrl} alt={url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      </div>
+    );
+  }
+
+  if (state === 'error') {
     return (
       <div style={{ ...style, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', gap: 16 }}>
-        <div style={{ fontSize: 48, marginBottom: 8 }}>🌐</div>
+        <div style={{ fontSize: 48 }}>🌐</div>
         <div style={{ fontSize: 'clamp(16px, 3vw, 36px)', fontWeight: 700, color: 'white', textAlign: 'center' }}>{url}</div>
         <div style={{ fontSize: 'clamp(12px, 1.5vw, 18px)', color: 'rgba(255,255,255,0.4)', textAlign: 'center', maxWidth: 600 }}>
-          This site blocks embedding in iframes.<br />Use a screenshot image asset instead.
+          Could not load or screenshot this page.
         </div>
       </div>
     );
   }
 
+  // Default: try iframe first
   return (
     <iframe
       ref={iframeRef}
       src={url}
       style={{ ...style, border: 'none' }}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      onError={() => setBlocked(true)}
+      onError={() => takeScreenshot()}
     />
   );
 }
