@@ -474,9 +474,13 @@ export default function DisplayPage() {
   if (settings.mode === 'playlist' && playlist) {
     const items = playlist.items;
     if (items.length > 0) {
-      const idx = Math.min(currentIdx, items.length - 1);
-      const item = items[idx];
-      currentAsset = assets.find(a => a.id === item.asset_id) ?? null;
+      // Find a valid asset starting from currentIdx, skipping items with missing assets
+      let searchIdx = Math.min(currentIdx, items.length - 1);
+      for (let i = 0; i < items.length; i++) {
+        const candidate = assets.find(a => a.id === items[searchIdx].asset_id) ?? null;
+        if (candidate) { currentAsset = candidate; break; }
+        searchIdx = (searchIdx + 1) % items.length;
+      }
       if (currentAsset?.type === 'stats') {
         statsWidget = widgets.find(w => w.id === (currentAsset?.metadata as Record<string, string>)?.widget_id) ?? null;
       }

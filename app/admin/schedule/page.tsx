@@ -1,4 +1,5 @@
 'use client';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Plus, Trash2, Edit2, CalendarDays, X, RefreshCw, Clock, Repeat } from 'lucide-react';
