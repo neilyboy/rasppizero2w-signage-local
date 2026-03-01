@@ -379,17 +379,20 @@ export default function DisplayPage() {
 
       if (s.active_playlist_id) {
         const p = await fetch(`/api/playlists/${s.active_playlist_id}`).then(r => r.json());
-        setPlaylist(p);
+        if (p && !p.error) setPlaylist(p);
+        else setPlaylist(null);
       } else {
         setPlaylist(null);
       }
 
-      await fetch('/api/analytics', {
+      fetch('/api/analytics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event: 'display_viewed' }),
-      });
-    } catch {}
+      }).catch(() => {});
+    } catch (err) {
+      console.error('[display] loadAll error:', err);
+    }
   }, []);
 
   useEffect(() => {
@@ -417,19 +420,17 @@ export default function DisplayPage() {
       });
 
       if (active) {
-        const newSettings: Partial<DisplaySettings> = {};
         if (active.playlist_id) {
-          newSettings.active_playlist_id = active.playlist_id;
-          newSettings.mode = 'playlist';
+          setSettings(s => s ? { ...s, active_playlist_id: active.playlist_id, mode: 'playlist' } : s);
+          const p = await fetch(`/api/playlists/${active.playlist_id}`).then(r => r.json());
+          if (p && !p.error) setPlaylist(p);
         } else if (active.asset_id) {
-          newSettings.active_asset_id = active.asset_id;
-          newSettings.mode = 'asset';
-        }
-        if (Object.keys(newSettings).length) {
-          setSettings(s => s ? { ...s, ...newSettings } : s);
+          setSettings(s => s ? { ...s, active_asset_id: active.asset_id, mode: 'asset' } : s);
         }
       }
-    } catch {}
+    } catch (err) {
+      console.error('[display] checkSchedule error:', err);
+    }
   }, []);
 
   useEffect(() => {

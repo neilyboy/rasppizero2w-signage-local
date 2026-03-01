@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { safeJson } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const db = getDb();
   const row = db.prepare('SELECT * FROM playlists WHERE id = ?').get(params.id) as Record<string, unknown> | undefined;

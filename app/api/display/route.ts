@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const db = getDb();
   const row = db.prepare('SELECT * FROM display_settings WHERE id = 1').get() as Record<string, unknown>;
@@ -8,7 +10,7 @@ export async function GET() {
     ...row,
     show_clock: Boolean(row.show_clock),
     show_ticker: Boolean(row.show_ticker),
-  });
+  }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function PUT(req: NextRequest) {

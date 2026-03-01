@@ -3,6 +3,8 @@ import { getDb } from '@/lib/db';
 import { safeJson } from '@/lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM playlists ORDER BY created_at DESC').all() as Record<string, unknown>[];
