@@ -1,29 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execFile, ChildProcess, execSync } from 'child_process';
+import { execFile, ChildProcess } from 'child_process';
 import fs from 'fs';
 
 export const dynamic = 'force-dynamic';
 
 function findXauthority(): string | undefined {
-  // Try common locations
-  const candidates = [
-    process.env.XAUTHORITY,
-    `${process.env.HOME}/.Xauthority`,
-    '/run/user/1000/gdm/Xauthority',
-    '/tmp/.Xauthority',
-  ].filter(Boolean) as string[];
+  // Scan running Chromium process for its XAUTHORITY env var
+  try {
+    const pids = fs.readdirSync('/proc').filter(p => /^\d+$/.test(p));
+    for (const pid of pids) {
+      try {
+        const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+        if (cmdline.includes('chromium')) {
+          const environ = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+          const match = environ.split('\0').find(e => e.startsWith('XAUTHORITY='));
+          if (match) {
+            const xauthPath = match.slice('XAUTHORITY='.length);
+            if (fs.existsSync(xauthPath)) return xauthPath;
+          }
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
 
+  // Fallback: known locations
+  const candidates = [
+    '/tmp/.Xauthority-pisign',
+    process.env.XAUTHORITY,
+    `/home/${process.env.USER}/.Xauthority`,
+    `${process.env.HOME}/.Xauthority`,
+  ].filter(Boolean) as string[];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-
-  // Try xauth info to find it
-  try {
-    const out = execSync('xauth info 2>/dev/null', { env: { ...process.env, DISPLAY: ':0' } }).toString();
-    const match = out.match(/Authority file:\s*(.+)/);
-    if (match?.[1]) return match[1].trim();
-  } catch { /* ignore */ }
-
   return undefined;
 }
 

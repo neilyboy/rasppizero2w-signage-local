@@ -12,9 +12,28 @@ const DISPLAY_VAL = ':0';
 const CDP_PORT = 9222;
 
 function findXauthority(): string | undefined {
+  // First: try to read XAUTHORITY from the running kiosk Chromium process
+  try {
+    const pids = fs.readdirSync('/proc').filter(p => /^\d+$/.test(p));
+    for (const pid of pids) {
+      try {
+        const environ = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+        if (environ.includes('chromium') || fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('chromium')) {
+          const match = environ.split('\0').find(e => e.startsWith('XAUTHORITY='));
+          if (match) {
+            const xauthPath = match.slice('XAUTHORITY='.length);
+            if (fs.existsSync(xauthPath)) return xauthPath;
+          }
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
+
+  // Fallback: known locations
   const candidates = [
     '/tmp/.Xauthority-pisign',
     process.env.XAUTHORITY,
+    `/home/${process.env.USER}/.Xauthority`,
     `${process.env.HOME}/.Xauthority`,
     '/run/user/1000/gdm/Xauthority',
   ].filter(Boolean) as string[];
